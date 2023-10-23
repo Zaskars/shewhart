@@ -6,36 +6,20 @@ import numpy as np
 import plotly.graph_objs as go
 from dash.dependencies import Input, Output, State
 
-from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks
-from shewhart_app.components.service.models import Measurement, Base
+from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks, detect_asterisks_x, detect_shifts_x, detect_trends_x
+from shewhart_app.components.service.models import Measurement, Base, XData, RData
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
+from shewhart_app.components.service.constants import *
 
 MAX_POINTS = content.MAX_POINTS
-mean_process_value = 100  # Среднее значение процесса
-standard_deviation = 1  # Стандартное отклонение
-sample_size = 5  # Размер выборки для каждой точки данных
-
-# Для расчета контрольных пределов
-UCL = mean_process_value + (3 * standard_deviation / (sample_size ** 0.5))
-CL = mean_process_value
-LCL = mean_process_value - (3 * standard_deviation / (sample_size ** 0.5))
-
-
-
-# Список для хранения сгенерированных данных
-values = []
-
-ranges = []
-
-# Контрольные пределы для R-чарта
-R_bar = standard_deviation * 2.326  # Средний диапазон (приближенно для нормального распределения)
-UCL_R = R_bar + 3 * (standard_deviation / (sample_size ** 0.5))
-LCL_R = max(0, R_bar - 3 * (standard_deviation / (sample_size ** 0.5)))
-
+SAMPLE_SIZE = 5
+MEAN = 10
+STD_DEV = 2
 
 layout = dbc.Container([
     html.H1("View p-Chart", className="mb-4"),
+    html.Div(id='placeholder-x', style={'display': 'none'}),
     dcc.Graph(id="p-chart-page2"),
     dcc.Graph(id="x-chart"),
     dcc.Graph(id="r-chart"),
@@ -150,136 +134,127 @@ def update_chart_page2(n_intervals):
 
 
 @callback(
+    Output('placeholder-x', 'children'),
+    Input('interval-component-x-s-charts', 'n_intervals'),
+)
+def generate_x_data(n):
+    session = Session()
+
+    # Генерация новых данных
+    new_values = np.random.normal(MEAN, STD_DEV, SAMPLE_SIZE)
+    new_x = np.mean(new_values)
+    new_r = np.max(new_values) - np.min(new_values)
+
+    # Сохранение новых данных в базе данных
+    new_x_data = XData(value=new_x, sample_size=SAMPLE_SIZE)
+    new_r_data = RData(value=new_r, sample_size=SAMPLE_SIZE)
+    session.add(new_x_data)
+    session.add(new_r_data)
+    session.commit()
+    session.close()
+
+    return ''
+
+
+@callback(
     Output('x-chart', 'figure'),
-    [Input('interval-component-x-s-charts', 'n_intervals')]
+    Input('interval-component-x-s-charts', 'n_intervals'),
 )
 def update_x_chart(n):
-    # Добавляем новую точку данных на каждом обновлении
-    new_value = mean_process_value + random.gauss(0, standard_deviation)
-    values.append(new_value)
+    session = Session()
 
-    # Создаем новый график
-    trace = go.Scatter(
-        y=values,
-        mode='lines+markers',
-        name='X-chart'
-    )
+    # Получение данных из базы данных
+    x_data = session.query(XData).order_by(XData.id.desc()).limit(MAX_POINTS)
+    x_data = x_data[::-1]
 
-    layout = go.Layout(
-        title='X-chart: Control Chart for Mean',
-        xaxis=dict(title='Sample'),
-        yaxis=dict(title='Value'),
-        showlegend=True,
-        shapes=[
-            # Линия среднего значения (CL)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(values) - 1,
-                'y0': CL,
-                'y1': CL,
-                'line': {
-                    'color': 'blue',
-                    'width': 2,
-                    'dash': 'dashdot',
-                }
-            },
-            # Верхний контрольный предел (UCL)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(values) - 1,
-                'y0': UCL,
-                'y1': UCL,
-                'line': {
-                    'color': 'red',
-                    'width': 2,
-                    'dash': 'dash',
-                }
-            },
-            # Нижний контрольный предел (LCL)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(values) - 1,
-                'y0': LCL,
-                'y1': LCL,
-                'line': {
-                    'color': 'red',
-                    'width': 2,
-                    'dash': 'dash',
-                }
-            }
-        ]
-    )
+    # Подготовка данных для X-чарта
+    x_values = [data.value for data in x_data]
+    x_mean = np.mean(x_values)
+    sample_size = x_data[0].sample_size if x_data else 5  # используйте реальный размер выборки
 
-    return {'data': [trace], 'layout': layout}
+    x_ucl = x_mean + A2_values[sample_size] * np.std(x_values, ddof=1)
+    x_lcl = x_mean - A2_values[sample_size] * np.std(x_values, ddof=1)
+
+    is_trend, trend_text = detect_trends_x(x_values)
+    is_shift, shift_text = detect_shifts_x(x_values, x_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(x_values, x_mean)
+
+    # Создание X-чарта
+    x_chart = go.Figure()
+    x_chart.add_trace(go.Scatter(y=x_values, mode='lines+markers', name='X'))
+
+    # Если обнаружены аномалии, добавляем аннотации
+    annotations = []
+    if is_trend:
+        annotations.append(
+            {"x": len(x_values) - 1, "y": x_values[-1], "text": trend_text, "showarrow": True, "arrowhead": 7})
+    if is_shift:
+        annotations.append(
+            {"x": len(x_values) - 1, "y": x_values[-1], "text": shift_text, "showarrow": True, "arrowhead": 7})
+    if is_asterisk:
+        annotations.append(
+            {"x": len(x_values) - 1, "y": x_values[-1], "text": asterisk_text, "showarrow": True, "arrowhead": 7})
+
+    x_chart.update_layout(annotations=annotations)
+
+    x_chart.add_hline(y=x_mean, line_dash="dash", line_color="blue", annotation_text="Центральная линия",
+                      annotation_position="bottom right")
+    x_chart.add_hline(y=x_ucl, line_dash="dash", line_color="red", annotation_text="UCL",
+                      annotation_position="bottom right")
+    x_chart.add_hline(y=x_lcl, line_dash="dash", line_color="green", annotation_text="LCL",
+                      annotation_position="top right")
+
+    session.close()
+    return x_chart
 
 
 @callback(
     Output('r-chart', 'figure'),
-    [Input('interval-component-x-s-charts', 'n_intervals')]
+    Input('interval-component-x-s-charts', 'n_intervals'),
 )
 def update_r_chart(n):
-    # Добавляем новый диапазон данных на каждом обновлении (мы предполагаем, что 'values' обновляется в X-chart)
-    if len(values) >= sample_size:
-        sample_group = values[-sample_size:]  # Получаем последние 'sample_size' точек данных
-        range_value = max(sample_group) - min(sample_group)  # Вычисляем диапазон
-        ranges.append(range_value)
+    session = Session()
 
-    # Создаем новый график
-    trace = go.Scatter(
-        y=ranges,
-        mode='lines+markers',
-        name='R-chart'
-    )
+    # Получение данных из базы данных
+    r_data = session.query(RData).order_by(RData.id.desc()).limit(MAX_POINTS)
+    r_data = r_data[::-1]
 
-    layout = go.Layout(
-        title='R-chart: Control Chart for Range',
-        xaxis=dict(title='Sample Group'),
-        yaxis=dict(title='Range'),
-        showlegend=True,
-        shapes=[
-            # Линия среднего диапазона (R-bar)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(ranges) - 1,
-                'y0': R_bar,
-                'y1': R_bar,
-                'line': {
-                    'color': 'blue',
-                    'width': 2,
-                    'dash': 'dashdot',
-                }
-            },
-            # Верхний контрольный предел (UCL)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(ranges) - 1,
-                'y0': UCL_R,
-                'y1': UCL_R,
-                'line': {
-                    'color': 'red',
-                    'width': 2,
-                    'dash': 'dash',
-                }
-            },
-            # Нижний контрольный предел (LCL)
-            {
-                'type': 'line',
-                'x0': 0,
-                'x1': len(ranges) - 1,
-                'y0': LCL_R,
-                'y1': LCL_R,
-                'line': {
-                    'color': 'red',
-                    'width': 2,
-                    'dash': 'dash',
-                }
-            }
-        ]
-    )
+    # Подготовка данных для R-чарта
+    r_values = [data.value for data in r_data]
+    r_mean = np.mean(r_values)
+    sample_size = r_data[0].sample_size if r_data else 5  # используйте реальный размер выборки
 
-    return {'data': [trace], 'layout': layout}
+    r_ucl = D4_values[sample_size] * r_mean
+    r_lcl = D3_values[sample_size] * r_mean
+
+    is_trend, trend_text = detect_trends_x(r_values)
+    is_shift, shift_text = detect_shifts_x(r_values, r_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(r_values, r_mean)
+
+    # Создание R-чарта
+    r_chart = go.Figure()
+    r_chart.add_trace(go.Scatter(y=r_values, mode='lines+markers', name='R'))
+
+    # Если обнаружены аномалии, добавляем аннотации
+    annotations = []
+    if is_trend:
+        annotations.append(
+            {"x": len(r_values) - 1, "y": r_values[-1], "text": trend_text, "showarrow": True, "arrowhead": 7})
+    if is_shift:
+        annotations.append(
+            {"x": len(r_values) - 1, "y": r_values[-1], "text": shift_text, "showarrow": True, "arrowhead": 7})
+    if is_asterisk:
+        annotations.append(
+            {"x": len(r_values) - 1, "y": r_values[-1], "text": asterisk_text, "showarrow": True, "arrowhead": 7})
+
+    r_chart.update_layout(annotations=annotations)
+
+    r_chart.add_hline(y=r_mean, line_dash="dash", line_color="blue", annotation_text="Центральная линия",
+                      annotation_position="bottom right")
+    r_chart.add_hline(y=r_ucl, line_dash="dash", line_color="red", annotation_text="UCL",
+                      annotation_position="bottom right")
+    r_chart.add_hline(y=r_lcl, line_dash="dash", line_color="green", annotation_text="LCL",
+                      annotation_position="top right")
+
+    session.close()
+    return r_chart

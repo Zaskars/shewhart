@@ -13,3 +13,17 @@ class Measurement(Base):
     measurement_time = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class XData(Base):
+    __tablename__ = 'x_data'
+    id = Column(Integer, primary_key=True)
+    value = Column(Float)
+    sample_size = Column(Integer)
+
+
+class RData(Base):
+    __tablename__ = 'r_data'
+    id = Column(Integer, primary_key=True)
+    value = Column(Float)
+    sample_size = Column(Integer)
+
+
