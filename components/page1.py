@@ -4,10 +4,10 @@ import numpy as np
 import plotly.graph_objs as go
 from dash.dependencies import Input, Output, State
 
-from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks
-from shewhart_app.components.service.models import Measurement, Base
-from shewhart_app.components.service.session import Session, engine
-import shewhart_app.components.content as content
+from components.service.detectors import detect_trends, detect_shifts, detect_asterisks
+from components.service.models import Measurement, Base
+from components.service.session import Session, engine
+import components.content as content
 
 Base.metadata.create_all(engine)
 MAX_POINTS = content.MAX_POINTS

@@ -6,11 +6,11 @@ import numpy as np
 import plotly.graph_objs as go
 from dash.dependencies import Input, Output, State
 
-from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks, detect_asterisks_x, detect_shifts_x, detect_trends_x
-from shewhart_app.components.service.models import Measurement, Base, XData, RData
-from shewhart_app.components.service.session import Session, engine
-import shewhart_app.components.content as content
-from shewhart_app.components.service.constants import *
+from components.service.detectors import detect_trends, detect_shifts, detect_asterisks, detect_asterisks_x, detect_shifts_x, detect_trends_x
+from components.service.models import Measurement, Base, XData, RData
+from components.service.session import Session, engine
+import components.content as content
+from components.service.constants import *
 
 MAX_POINTS = content.MAX_POINTS
 SAMPLE_SIZE = 5
@@ -168,44 +168,84 @@ def update_x_chart(n):
     x_data = x_data[::-1]
 
     # Подготовка данных для X-чарта
-    x_values = [data.value for data in x_data]
+    x_values = np.array([data.value for data in x_data])
     x_mean = np.mean(x_values)
     sample_size = x_data[0].sample_size if x_data else 5  # используйте реальный размер выборки
 
-    x_ucl = x_mean + A2_values[sample_size] * np.std(x_values, ddof=1)
-    x_lcl = x_mean - A2_values[sample_size] * np.std(x_values, ddof=1)
+    x_ucl = np.ones((len(x_values),), dtype=int) * x_mean + A2_values[sample_size] * np.std(x_values, ddof=1)
+    x_lcl = np.ones((len(x_values),), dtype=int) * x_mean - A2_values[sample_size] * np.std(x_values, ddof=1)
 
     is_trend, trend_text = detect_trends_x(x_values)
     is_shift, shift_text = detect_shifts_x(x_values, x_mean)
     is_asterisk, asterisk_text = detect_asterisks_x(x_values, x_mean)
 
-    # Создание X-чарта
-    x_chart = go.Figure()
-    x_chart.add_trace(go.Scatter(y=x_values, mode='lines+markers', name='X'))
-
-    # Если обнаружены аномалии, добавляем аннотации
     annotations = []
+    is_trend, trend_text = detect_trends_x(x_values)
+    is_shift, shift_text = detect_shifts_x(x_values, x_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(x_values, x_mean)
+
+    # Создание R-чарта
     if is_trend:
         annotations.append(
-            {"x": len(x_values) - 1, "y": x_values[-1], "text": trend_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(x_values) - 1,
+                y=x_values[-1],
+                xref="x",
+                yref="y",
+                text=trend_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-40
+            )
+        )
     if is_shift:
         annotations.append(
-            {"x": len(x_values) - 1, "y": x_values[-1], "text": shift_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(x_values) - 1,
+                y=x_values[-1],
+                xref="x",
+                yref="y",
+                text=shift_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-70
+            )
+        )
     if is_asterisk:
         annotations.append(
-            {"x": len(x_values) - 1, "y": x_values[-1], "text": asterisk_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(x_values) - 1,
+                y=x_values[-1],
+                xref="x",
+                yref="y",
+                text=asterisk_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-100
+            )
+        )
 
-    x_chart.update_layout(annotations=annotations)
+    figure = {
+        'data': [
+            go.Scatter(y=x_values, mode="lines+markers", name="Value", line=dict(color='blue')),
+            go.Scatter(y=[x_mean for _ in x_values], name="Mean Value"),
+            go.Scatter(y=x_ucl, mode="lines", name="UCL", line=dict(dash="dash", color='red')),
+            go.Scatter(y=x_lcl, mode="lines", name="LCL", line=dict(dash="dash", color='red'))
 
-    x_chart.add_hline(y=x_mean, line_dash="dash", line_color="blue", annotation_text="Центральная линия",
-                      annotation_position="bottom right")
-    x_chart.add_hline(y=x_ucl, line_dash="dash", line_color="red", annotation_text="UCL",
-                      annotation_position="bottom right")
-    x_chart.add_hline(y=x_lcl, line_dash="dash", line_color="green", annotation_text="LCL",
-                      annotation_position="top right")
+        ],
+        'layout': go.Layout(
+            title="X-Chart",
+            xaxis=dict(title="Sample Number"),
+            yaxis=dict(title="Value"),
+            showlegend=True,
+            annotations=annotations
+        )
+    }
 
-    session.close()
-    return x_chart
+    return figure
 
 
 @callback(
@@ -220,41 +260,77 @@ def update_r_chart(n):
     r_data = r_data[::-1]
 
     # Подготовка данных для R-чарта
-    r_values = [data.value for data in r_data]
+    r_values = np.array([data.value for data in r_data])
     r_mean = np.mean(r_values)
     sample_size = r_data[0].sample_size if r_data else 5  # используйте реальный размер выборки
 
-    r_ucl = D4_values[sample_size] * r_mean
-    r_lcl = D3_values[sample_size] * r_mean
+    r_ucl = np.ones((len(r_values),), dtype=int) * D4_values[sample_size] * r_mean
+    r_lcl = np.ones((len(r_values),), dtype=int) * D3_values[sample_size] * r_mean
 
+    annotations = []
     is_trend, trend_text = detect_trends_x(r_values)
     is_shift, shift_text = detect_shifts_x(r_values, r_mean)
     is_asterisk, asterisk_text = detect_asterisks_x(r_values, r_mean)
 
     # Создание R-чарта
-    r_chart = go.Figure()
-    r_chart.add_trace(go.Scatter(y=r_values, mode='lines+markers', name='R'))
-
-    # Если обнаружены аномалии, добавляем аннотации
-    annotations = []
     if is_trend:
         annotations.append(
-            {"x": len(r_values) - 1, "y": r_values[-1], "text": trend_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(r_values) - 1,
+                y=r_values[-1],
+                xref="x",
+                yref="y",
+                text=trend_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-40
+            )
+        )
     if is_shift:
         annotations.append(
-            {"x": len(r_values) - 1, "y": r_values[-1], "text": shift_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(r_values) - 1,
+                y=r_values[-1],
+                xref="x",
+                yref="y",
+                text=shift_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-70
+            )
+        )
     if is_asterisk:
         annotations.append(
-            {"x": len(r_values) - 1, "y": r_values[-1], "text": asterisk_text, "showarrow": True, "arrowhead": 7})
+            dict(
+                x=len(r_values) - 1,
+                y=r_values[-1],
+                xref="x",
+                yref="y",
+                text=asterisk_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-100
+            )
+        )
 
-    r_chart.update_layout(annotations=annotations)
+    figure = {
+        'data': [
+            go.Scatter(y=r_values, mode="lines+markers", name="Standard Deviation", line=dict(color='blue')),
+            go.Scatter(y=[r_mean for _ in r_values], name="Mean Value"),
+            go.Scatter(y=r_ucl, mode="lines", name="UCL", line=dict(dash="dash", color='red')),
+            go.Scatter(y=r_lcl, mode="lines", name="LCL", line=dict(dash="dash", color='red'))
 
-    r_chart.add_hline(y=r_mean, line_dash="dash", line_color="blue", annotation_text="Центральная линия",
-                      annotation_position="bottom right")
-    r_chart.add_hline(y=r_ucl, line_dash="dash", line_color="red", annotation_text="UCL",
-                      annotation_position="bottom right")
-    r_chart.add_hline(y=r_lcl, line_dash="dash", line_color="green", annotation_text="LCL",
-                      annotation_position="top right")
+        ],
+        'layout': go.Layout(
+            title="R-Chart",
+            xaxis=dict(title="Sample Number"),
+            yaxis=dict(title="Standart Deviation"),
+            showlegend=True,
+            annotations=annotations
+        )
+    }
 
-    session.close()
-    return r_chart
+    return figure
