@@ -1,3 +1,5 @@
+import re
+import dash
 from dash import dcc, html, dash_table, callback
 import dash_bootstrap_components as dbc
 import numpy as np
@@ -8,52 +10,61 @@ from shewhart_app.components.service.detectors import detect_trends, detect_shif
 from shewhart_app.components.service.models import Measurement, Base
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
+from shewhart_app.components.navbar import Navbar
 
 Base.metadata.create_all(engine)
 MAX_POINTS = content.MAX_POINTS
 
-layout = dbc.Container([
-    html.H1("Custom p-Chart", className="mb-4"),
-    dbc.Row([
-        dbc.Col([
-            dbc.Label("Proportion (e.g., 0.11)"),
-            dbc.Input(id="input-proportion", type="number", step=0.001, className="mb-2"),
-            dbc.Label("Sample Size (e.g., 100)"),
-            dbc.Input(id="input-sample-size", type="number", className="mb-2"),
-            dbc.Button("Add Data", id="add-data-button", color="primary", className="mb-3"),
-        ], width=4),
-        dbc.Col([
-            dash_table.DataTable(
-                id='table',
-                columns=[
-                    {"name": "Proportion", "id": "proportion"},
-                    {"name": "Sample Size", "id": "sample_size"},
-                ],
-                style_table={'height': '300px', 'overflowY': 'auto'},
-                data=[],
-            ),
-        ], width=4),
-    ]),
-    dcc.Graph(id="p-chart"),
-    html.Div(id='data-added-signal', style={'display': 'none'}),
-    dcc.Interval(
-        id='interval-component',
-        interval=10 * 1000,  # in milliseconds
-        n_intervals=0
-    )
-])
+dash.register_page(__name__, path_template='/bindings/<bid>/input')
+
+
+def layout(bid=None):
+    return dbc.Container([
+        html.H1(f"Input for Binding {bid}", className="mb-4"),  # заголовок гребаный
+        dbc.Row([
+            dbc.Col([
+                dbc.Label("Proportion (e.g., 0.11)"),
+                dbc.Input(id=f"input-proportion", type="number", step=0.001, className="mb-2"),
+                dbc.Label("Sample Size (e.g., 100)"),
+                dbc.Input(id=f"input-sample-size", type="number", className="mb-2"),
+                dbc.Button("Add Data", id=f"add-data-button", color="primary", className="mb-3"),
+            ], width=4),
+            dbc.Col([
+                dash_table.DataTable(
+                    id=f'table',
+                    columns=[
+                        {"name": "Proportion", "id": "proportion"},
+                        {"name": "Sample Size", "id": "sample_size"},
+                    ],
+                    style_table={'height': '300px', 'overflowY': 'auto'},
+                    data=[],
+                ),
+            ], width=4),
+        ]),
+        dcc.Graph(id=f"p-chart"),
+        html.Div(id=f'data-added-signal', style={'display': 'none'}),
+        dcc.Interval(
+            id=f'interval-component',
+            interval=10 * 1000,  # in milliseconds
+            n_intervals=0
+        ),
+        html.Data(id='bid', value=bid)
+    ])
 
 
 @callback(
     Output('data-added-signal', 'children'),
     [Input("add-data-button", "n_clicks")],
     [State("input-proportion", "value"),
-     State("input-sample-size", "value")]
+     State("input-sample-size", "value"),
+     State("bid", "value")]
 )
-def add_data_to_database(n_clicks, proportion, sample_size):
+def add_data_to_database(n_clicks, proportion, sample_size, bid):
+    binding_id = int(bid)
+
     if n_clicks and proportion is not None and sample_size is not None:
         session = Session()
-        new_measurement = Measurement(proportion=proportion, sample_size=sample_size)
+        new_measurement = Measurement(proportion=proportion, sample_size=sample_size, binding_id=binding_id)
         session.add(new_measurement)
         session.commit()
         session.close()
@@ -65,11 +76,14 @@ def add_data_to_database(n_clicks, proportion, sample_size):
     [Output("table", "data"),
      Output("p-chart", "figure")],
     [Input('data-added-signal', 'children'),
-     Input('interval-component', 'n_intervals')],  # слушаем сигнал об успешном добавлении данных
+     Input('interval-component', 'n_intervals')],
+    State("bid", "value")
 )
-def update_chart(data_added, n_intervals):
+def update_chart(data_added, n_intervals, bid):
+    binding_id = int(bid)
     session = Session()
-    recent_measurements = session.query(Measurement).order_by(Measurement.id.desc()).limit(MAX_POINTS)
+    recent_measurements = session.query(Measurement).filter_by(binding_id=binding_id).order_by(
+        Measurement.id.desc()).limit(MAX_POINTS)
     recent_measurements = recent_measurements[::-1]
     session.close()
 
