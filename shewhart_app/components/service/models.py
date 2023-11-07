@@ -33,6 +33,14 @@ class RData(Base):
     binding = relationship("Binding", back_populates="r_data")
 
 
+class IndividualMeasurement(Base):
+    __tablename__ = 'individual_measurements'
+    id = Column(Integer, primary_key=True)
+    value = Column(Float, nullable=False)
+    binding_id = Column(Integer, ForeignKey('bindings.id'))  # предполагается, что у вас уже есть таблица связей
+    binding = relationship("Binding", back_populates="i_measurements")
+
+
 class Binding(Base):
     __tablename__ = 'bindings'
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -40,3 +48,4 @@ class Binding(Base):
     measurements = relationship("Measurement", order_by=Measurement.id, back_populates="binding")
     x_data = relationship("XData", order_by=XData.id, back_populates="binding")
     r_data = relationship("RData", order_by=RData.id, back_populates="binding")
+    i_measurements = relationship("IndividualMeasurement", order_by=IndividualMeasurement.id, back_populates="binding")

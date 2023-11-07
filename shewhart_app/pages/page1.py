@@ -7,7 +7,7 @@ import plotly.graph_objs as go
 from dash.dependencies import Input, Output, State
 
 from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks
-from shewhart_app.components.service.models import Measurement, Base
+from shewhart_app.components.service.models import Measurement, Base, IndividualMeasurement
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
 from shewhart_app.components.navbar import Navbar
@@ -41,6 +41,7 @@ def layout(bid=None):
                 ),
             ], width=4),
         ]),
+
         dcc.Graph(id=f"p-chart"),
         html.Div(id=f'data-added-signal', style={'display': 'none'}),
         dcc.Interval(
@@ -48,6 +49,14 @@ def layout(bid=None):
             interval=10 * 1000,  # in milliseconds
             n_intervals=0
         ),
+        dbc.Row([
+            dbc.Col([
+                dbc.Label("Enter Measurement Value"),
+                dbc.Input(id="input-x-value", type="number", step="any", className="mb-2"),
+                dbc.Button("Add Measurement", id="add-data-button-x", color="primary", className="mb-3"),
+            ], width=4),
+        ]),
+        html.Div(id='data-added-signal-x', style={'display': 'none'}),
         html.Data(id='bid', value=bid)
     ])
 
@@ -69,6 +78,27 @@ def add_data_to_database(n_clicks, proportion, sample_size, bid):
         session.commit()
         session.close()
         return 'True'  # данные успешно добавлены
+    return 'False'
+
+
+@callback(
+    Output('data-added-signal-x', 'children'),
+    [Input("add-data-button-x", "n_clicks")],
+    [State("input-x-value", "value"),  # предполагаем, что у вас есть такой компонент ввода
+     State("bid", "value")]
+)
+def add_individual_data_to_database(n_clicks, x_value, bid):
+
+    if n_clicks and x_value is not None:
+        binding_id = int(bid)
+        session = Session()
+
+        new_measurement = IndividualMeasurement(value=float(x_value), binding_id=binding_id)
+        session.add(new_measurement)
+
+        session.commit()
+        session.close()
+        return 'True'
     return 'False'
 
 

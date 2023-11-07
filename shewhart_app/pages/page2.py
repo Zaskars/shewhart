@@ -282,7 +282,7 @@ def update_r_chart(n, bid):
     # Подготовка данных для R-чарта
     r_values = np.array([data.value for data in r_data])
     r_mean = np.mean(r_values)
-    sample_size = r_data[0].sample_size if r_data else 5  # используйте реальный размер выборки
+    sample_size = r_data[0].sample_size if r_data else 5
 
     r_ucl = np.ones((len(r_values),), dtype=int) * D4_values[sample_size] * r_mean
     r_lcl = np.ones((len(r_values),), dtype=int) * D3_values[sample_size] * r_mean
