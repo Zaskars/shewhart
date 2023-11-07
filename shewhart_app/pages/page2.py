@@ -9,7 +9,7 @@ from dash.dependencies import Input, Output, State
 
 from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks, \
     detect_asterisks_x, detect_shifts_x, detect_trends_x
-from shewhart_app.components.service.models import Measurement, Base, XData, RData
+from shewhart_app.components.service.models import Measurement, Base, XData, RData, IndividualMeasurement
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
 from shewhart_app.components.service.constants import *
@@ -28,6 +28,23 @@ def layout(bid=None):
         html.H1(f"View {bid}", className="mb-4"),
         html.Div(id='placeholder-x', style={'display': 'none'}),
         dcc.Graph(id="p-chart-page2"),
+        dbc.Row([
+            dbc.Col([
+                dbc.Label("Subgroup Size"),
+                dcc.Input(
+                    id="input-subgroup-size",
+                    type="number",
+                    placeholder="Enter subgroup size",
+                    value=5,  # Значение по умолчанию
+                ),
+                dbc.Button(
+                    "Update Chart",
+                    id="update-chart-button",
+                    color="primary",
+                    className="mt-2"
+                ),
+            ], width=4),
+        ]),
         dcc.Graph(id="x-chart"),
         dcc.Graph(id="r-chart"),
         dcc.Interval(
@@ -171,42 +188,54 @@ def generate_x_data(n, bid):
 
 @callback(
     Output('x-chart', 'figure'),
-    [Input('interval-component-x-s-charts', 'n_intervals')],
-    State("bid", "value")
+    [Input('interval-component-x-s-charts', 'n_intervals'),
+     Input('update-chart-button', 'n_clicks')],
+    [State("bid", "value"), State("input-subgroup-size", "value")]
 )
-def update_x_chart(n, bid):
+def update_x_chart(n_intervals, n_clicks, bid, sample_size):
     binding_id = int(bid)
     session = Session()
 
     # Получение данных из базы данных
-    x_data = session.query(XData).filter_by(binding_id=binding_id).order_by(XData.id.desc()).limit(MAX_POINTS)
+    individual_measurements = session.query(IndividualMeasurement).filter_by(binding_id=binding_id).order_by(
+        IndividualMeasurement.id.desc()).limit(MAX_POINTS*sample_size).all()
+    individual_measurements_list = np.array([data.value for data in individual_measurements])
+    individual_measurements_list = individual_measurements_list[::-1]
+
+
     session.close()
-    x_data = x_data[::-1]
 
-    # Подготовка данных для X-чарта
-    x_values = np.array([data.value for data in x_data])
-    x_mean = np.mean(x_values)
-    sample_size = x_data[0].sample_size if x_data else 5  # используйте реальный размер выборки
+    # Группировка данных в подгруппы
+    grouped_measurements = [individual_measurements_list[i:i + sample_size] for i in
+                            range(0, len(individual_measurements_list), sample_size) if
+                            len(individual_measurements_list[i:i + sample_size]) == sample_size]
 
-    x_ucl = np.ones((len(x_values),), dtype=int) * x_mean + A2_values[sample_size] * np.std(x_values, ddof=1)
-    x_lcl = np.ones((len(x_values),), dtype=int) * x_mean - A2_values[sample_size] * np.std(x_values, ddof=1)
 
-    is_trend, trend_text = detect_trends_x(x_values)
-    is_shift, shift_text = detect_shifts_x(x_values, x_mean)
-    is_asterisk, asterisk_text = detect_asterisks_x(x_values, x_mean)
 
+    # Расчет средних значений и стандартных отклонений для каждой подгруппы
+    subgroup_means = np.array([np.mean(subgroup) for subgroup in grouped_measurements])
+    subgroup_stddevs = np.array([np.std(subgroup, ddof=1) for subgroup in grouped_measurements])
+    x_mean = np.mean(subgroup_means)
+    print(subgroup_means)
+
+    # Расчет контрольных пределов для каждой подгруппы
+    a2 = A2_values.get(sample_size, A2_values[
+        5])  # Получаем значение A2 для размера подгруппы, по умолчанию используем для размера 5
+    x_ucl = np.ones((len(subgroup_means),), dtype=int) * x_mean + a2 * np.mean(subgroup_stddevs)
+    x_lcl = np.ones((len(subgroup_means),), dtype=int) * x_mean - a2 * np.mean(subgroup_stddevs)
     # Создание X-чарта
     annotations = []
-    is_trend, trend_text = detect_trends_x(x_values)
-    is_shift, shift_text = detect_shifts_x(x_values, x_mean)
-    is_asterisk, asterisk_text = detect_asterisks_x(x_values, x_mean)
+    is_trend, trend_text = detect_trends_x(subgroup_means)
+
+    is_shift, shift_text = detect_shifts_x(subgroup_means, x_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(subgroup_means, x_mean)
 
     # Создание R-чарта
     if is_trend:
         annotations.append(
             dict(
-                x=len(x_values) - 1,
-                y=x_values[-1],
+                x=len(subgroup_means) - 1,
+                y=subgroup_means[-1],
                 xref="x",
                 yref="y",
                 text=trend_text,
@@ -219,8 +248,8 @@ def update_x_chart(n, bid):
     if is_shift:
         annotations.append(
             dict(
-                x=len(x_values) - 1,
-                y=x_values[-1],
+                x=len(subgroup_means) - 1,
+                y=subgroup_means[-1],
                 xref="x",
                 yref="y",
                 text=shift_text,
@@ -233,8 +262,8 @@ def update_x_chart(n, bid):
     if is_asterisk:
         annotations.append(
             dict(
-                x=len(x_values) - 1,
-                y=x_values[-1],
+                x=len(subgroup_means) - 1,
+                y=subgroup_means[-1],
                 xref="x",
                 yref="y",
                 text=asterisk_text,
@@ -247,8 +276,8 @@ def update_x_chart(n, bid):
 
     figure = {
         'data': [
-            go.Scatter(y=x_values, mode="lines+markers", name="Value", line=dict(color='blue')),
-            go.Scatter(y=[x_mean for _ in x_values], name="Mean Value"),
+            go.Scatter(y=subgroup_means, mode="lines+markers", name="Value", line=dict(color='blue')),
+            go.Scatter(y=[x_mean for _ in subgroup_means], name="Mean Value"),
             go.Scatter(y=x_ucl, mode="lines", name="UCL", line=dict(dash="dash", color='red')),
             go.Scatter(y=x_lcl, mode="lines", name="LCL", line=dict(dash="dash", color='red'))
 
