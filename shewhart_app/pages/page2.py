@@ -47,14 +47,15 @@ def layout(bid=None):
         ]),
         dcc.Graph(id="x-chart"),
         dcc.Graph(id="r-chart"),
+        dcc.Graph(id="s-chart"),
         dcc.Interval(
             id='interval-component-page2',
-            interval=10 * 1000,  # in milliseconds
+            interval=10 * 100,  # in milliseconds
             n_intervals=0
         ),
         dcc.Interval(
             id='interval-component-x-s-charts',
-            interval=5 * 1000,  # обновление каждые 5 секунд
+            interval=5 * 100,  # обновление каждые 5 секунд
             n_intervals=0
         ),
         html.Data(id='bid', value=bid)
@@ -187,7 +188,9 @@ def generate_x_data(n, bid):
 
 
 @callback(
-    Output('x-chart', 'figure'),
+    [Output('x-chart', 'figure'),
+     Output('r-chart', 'figure'),
+     Output('s-chart', 'figure')],
     [Input('interval-component-x-s-charts', 'n_intervals'),
      Input('update-chart-button', 'n_clicks')],
     [State("bid", "value"), State("input-subgroup-size", "value")]
@@ -198,10 +201,9 @@ def update_x_chart(n_intervals, n_clicks, bid, sample_size):
 
     # Получение данных из базы данных
     individual_measurements = session.query(IndividualMeasurement).filter_by(binding_id=binding_id).order_by(
-        IndividualMeasurement.id.desc()).limit(MAX_POINTS*sample_size).all()
+        IndividualMeasurement.id.desc()).limit(MAX_POINTS * sample_size).all()
     individual_measurements_list = np.array([data.value for data in individual_measurements])
     individual_measurements_list = individual_measurements_list[::-1]
-
 
     session.close()
 
@@ -209,8 +211,6 @@ def update_x_chart(n_intervals, n_clicks, bid, sample_size):
     grouped_measurements = [individual_measurements_list[i:i + sample_size] for i in
                             range(0, len(individual_measurements_list), sample_size) if
                             len(individual_measurements_list[i:i + sample_size]) == sample_size]
-
-
 
     # Расчет средних значений и стандартных отклонений для каждой подгруппы
     subgroup_means = np.array([np.mean(subgroup) for subgroup in grouped_measurements])
@@ -290,43 +290,28 @@ def update_x_chart(n_intervals, n_clicks, bid, sample_size):
             annotations=annotations
         )
     }
+    r_figure = update_r_chart(grouped_measurements, sample_size)
+    s_figure = update_s_chart(grouped_measurements, sample_size)
+    return figure, r_figure, s_figure
 
-    return figure
 
-
-@callback(
-    Output('r-chart', 'figure'),
-    [Input('interval-component-x-s-charts', 'n_intervals')],
-    State("bid", "value")
-)
-def update_r_chart(n, bid):
-    binding_id = int(bid)
-    session = Session()
-
-    # Получение данных из базы данных
-    r_data = session.query(RData).filter_by(binding_id=binding_id).order_by(RData.id.desc()).limit(MAX_POINTS)
-    session.close()
-    r_data = r_data[::-1]
-
-    # Подготовка данных для R-чарта
-    r_values = np.array([data.value for data in r_data])
-    r_mean = np.mean(r_values)
-    sample_size = r_data[0].sample_size if r_data else 5
-
-    r_ucl = np.ones((len(r_values),), dtype=int) * D4_values[sample_size] * r_mean
-    r_lcl = np.ones((len(r_values),), dtype=int) * D3_values[sample_size] * r_mean
+def update_r_chart(grouped_measurements, sample_size):
+    subgroup_ranges = np.array([max(subgroup) - min(subgroup) for subgroup in grouped_measurements])
+    r_mean = np.mean(subgroup_ranges)
+    r_ucl = np.ones((len(subgroup_ranges),), dtype=int) * D4_values[sample_size] * r_mean
+    r_lcl = np.ones((len(subgroup_ranges),), dtype=int) * D3_values[sample_size] * r_mean
 
     annotations = []
-    is_trend, trend_text = detect_trends_x(r_values)
-    is_shift, shift_text = detect_shifts_x(r_values, r_mean)
-    is_asterisk, asterisk_text = detect_asterisks_x(r_values, r_mean)
+    is_trend, trend_text = detect_trends_x(subgroup_ranges)
+    is_shift, shift_text = detect_shifts_x(subgroup_ranges, r_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(subgroup_ranges, r_mean)
 
     # Создание R-чарта
     if is_trend:
         annotations.append(
             dict(
-                x=len(r_values) - 1,
-                y=r_values[-1],
+                x=len(subgroup_ranges) - 1,
+                y=subgroup_ranges[-1],
                 xref="x",
                 yref="y",
                 text=trend_text,
@@ -339,8 +324,8 @@ def update_r_chart(n, bid):
     if is_shift:
         annotations.append(
             dict(
-                x=len(r_values) - 1,
-                y=r_values[-1],
+                x=len(subgroup_ranges) - 1,
+                y=subgroup_ranges[-1],
                 xref="x",
                 yref="y",
                 text=shift_text,
@@ -353,8 +338,8 @@ def update_r_chart(n, bid):
     if is_asterisk:
         annotations.append(
             dict(
-                x=len(r_values) - 1,
-                y=r_values[-1],
+                x=len(subgroup_ranges) - 1,
+                y=subgroup_ranges[-1],
                 xref="x",
                 yref="y",
                 text=asterisk_text,
@@ -367,14 +352,89 @@ def update_r_chart(n, bid):
 
     figure = {
         'data': [
-            go.Scatter(y=r_values, mode="lines+markers", name="Standard Deviation", line=dict(color='blue')),
-            go.Scatter(y=[r_mean for _ in r_values], name="Mean Value"),
+            go.Scatter(y=subgroup_ranges, mode="lines+markers", name="Standard Deviation", line=dict(color='blue')),
+            go.Scatter(y=[r_mean for _ in subgroup_ranges], name="Mean Value"),
             go.Scatter(y=r_ucl, mode="lines", name="UCL", line=dict(dash="dash", color='red')),
             go.Scatter(y=r_lcl, mode="lines", name="LCL", line=dict(dash="dash", color='red'))
 
         ],
         'layout': go.Layout(
             title="R-Chart",
+            xaxis=dict(title="Sample Number"),
+            yaxis=dict(title="Standart Deviation"),
+            showlegend=True,
+            annotations=annotations
+        )
+    }
+
+    return figure
+
+
+def update_s_chart(grouped_measurements, sample_size):
+    subgroup_stddevs = np.array([np.std(subgroup, ddof=1) for subgroup in grouped_measurements])
+    s_mean = np.mean(subgroup_stddevs)
+    s_ucl = np.ones((len(subgroup_stddevs),), dtype=int) * B4_values[sample_size] * s_mean
+    s_lcl = np.ones((len(subgroup_stddevs),), dtype=int) * B3_values[sample_size] * s_mean
+
+    annotations = []
+    is_trend, trend_text = detect_trends_x(subgroup_stddevs)
+    is_shift, shift_text = detect_shifts_x(subgroup_stddevs, s_mean)
+    is_asterisk, asterisk_text = detect_asterisks_x(subgroup_stddevs, s_mean)
+
+    # Создание R-чарта
+    if is_trend:
+        annotations.append(
+            dict(
+                x=len(subgroup_stddevs) - 1,
+                y=subgroup_stddevs[-1],
+                xref="x",
+                yref="y",
+                text=trend_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-40
+            )
+        )
+    if is_shift:
+        annotations.append(
+            dict(
+                x=len(subgroup_stddevs) - 1,
+                y=subgroup_stddevs[-1],
+                xref="x",
+                yref="y",
+                text=shift_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-70
+            )
+        )
+    if is_asterisk:
+        annotations.append(
+            dict(
+                x=len(subgroup_stddevs) - 1,
+                y=subgroup_stddevs[-1],
+                xref="x",
+                yref="y",
+                text=asterisk_text,
+                showarrow=True,
+                arrowhead=7,
+                ax=0,
+                ay=-100
+            )
+        )
+
+    figure = {
+        'data': [
+            go.Scatter(y=subgroup_stddevs, mode="lines+markers", name="Standard Deviation", line=dict(color='blue')),
+            go.Scatter(y=[s_mean for _ in subgroup_stddevs], name="Mean Value"),
+            go.Scatter(y=s_ucl, mode="lines", name="UCL", line=dict(dash="dash", color='red')),
+            go.Scatter(y=s_lcl, mode="lines", name="LCL", line=dict(dash="dash", color='red'))
+
+        ],
+        'layout': go.Layout(
+            title="S-Chart",
             xaxis=dict(title="Sample Number"),
             yaxis=dict(title="Standart Deviation"),
             showlegend=True,
