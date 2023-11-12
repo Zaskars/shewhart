@@ -9,7 +9,7 @@ from dash.dependencies import Input, Output, State
 
 from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks, \
     detect_asterisks_x, detect_shifts_x, detect_trends_x
-from shewhart_app.components.service.models import Measurement, Base, XData, RData, IndividualMeasurement
+from shewhart_app.components.service.models import Measurement, Base, IndividualMeasurement
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
 from shewhart_app.components.service.constants import *

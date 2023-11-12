@@ -1,13 +1,14 @@
+import json
 import re
 import dash
 from dash import dcc, html, dash_table, callback
 import dash_bootstrap_components as dbc
 import numpy as np
 import plotly.graph_objs as go
-from dash.dependencies import Input, Output, State
+from dash.dependencies import Input, Output, State, MATCH, ALL
 
 from shewhart_app.components.service.detectors import detect_trends, detect_shifts, detect_asterisks
-from shewhart_app.components.service.models import Measurement, Base, IndividualMeasurement
+from shewhart_app.components.service.models import Measurement, Base, IndividualMeasurement, Chart, Binding
 from shewhart_app.components.service.session import Session, engine
 import shewhart_app.components.content as content
 from shewhart_app.components.navbar import Navbar
@@ -19,6 +20,25 @@ dash.register_page(__name__, path_template='/bindings/<bid>/input')
 
 
 def layout(bid=None):
+    session = Session()
+    binding_id = int(bid)
+    binding = session.query(Binding).filter_by(id=binding_id).one_or_none()
+
+    charts_data_input_forms = []
+    if binding and binding.charts:
+        for chart in binding.charts:
+            chart_form = dbc.Row([
+                dbc.Col([
+                    html.H4(chart.name),
+                    dbc.Label("Enter Data for " + chart.name),
+                    dbc.Input(id={"type": "input-data", "index": chart.id}, type="number", step="any",
+                              className="mb-2"),
+                    dbc.Button("Add Data to " + chart.name, id={"type": "add-data-button", "index": chart.id},
+                               color="primary", className="mb-3"),
+                ], width=4),
+            ])
+            charts_data_input_forms.append(chart_form)
+    session.close()
     return dbc.Container([
         html.H1(f"Input for Binding {bid}", className="mb-4"),  # заголовок гребаный
         dbc.Row([
@@ -51,14 +71,36 @@ def layout(bid=None):
         ),
         dbc.Row([
             dbc.Col([
-                dbc.Label("Enter Measurement Value"),
-                dbc.Input(id="input-x-value", type="number", step="any", className="mb-2"),
-                dbc.Button("Add Measurement", id="add-data-button-x", color="primary", className="mb-3"),
+                dbc.Label("New Chart Name"),
+                dbc.Input(id="input-new-chart-name", type="text", className="mb-2"),
+                dbc.Button("Create New Chart", id="create-new-chart-button", color="success", className="mb-3"),
             ], width=4),
         ]),
+        html.Div(charts_data_input_forms, id="charts-data-input-container"),
         html.Div(id='data-added-signal-x', style={'display': 'none'}),
+        html.Div(id='data-added-signal-2', style={'display': 'none'}),
+        html.Div(id='create-chart-signal', style={'display': 'none'}),
         html.Data(id='bid', value=bid)
     ])
+
+
+@callback(
+    Output('create-chart-signal', 'children'),
+    [Input("create-new-chart-button", "n_clicks")],
+    [State("input-new-chart-name", "value"),
+     State("bid", "value")]
+)
+def create_new_chart(n_clicks, chart_name, bid):
+    print('here')
+    if n_clicks and chart_name:
+        binding_id = int(bid)
+        session = Session()
+        new_chart = Chart(name=chart_name, binding_id=binding_id)
+        session.add(new_chart)
+        session.commit()
+        session.close()
+        return 'Chart Created'
+    return ''
 
 
 @callback(
@@ -82,24 +124,40 @@ def add_data_to_database(n_clicks, proportion, sample_size, bid):
 
 
 @callback(
-    Output('data-added-signal-x', 'children'),
-    [Input("add-data-button-x", "n_clicks")],
-    [State("input-x-value", "value"),  # предполагаем, что у вас есть такой компонент ввода
+    Output('data-added-signal-2', 'children'),
+    [Input({"type": "add-data-button", "index": ALL}, "n_clicks")],
+    [State({"type": "input-data", "index": ALL}, "value"),  # Добавленный state для идентификатора чарта
      State("bid", "value")]
 )
-def add_individual_data_to_database(n_clicks, x_value, bid):
+def add_individual_data_to_database(all_clicks, all_input_values, bid):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return 'No clicks yet'
 
-    if n_clicks and x_value is not None:
-        binding_id = int(bid)
-        session = Session()
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    chart_id = json.loads(button_id)["index"]
 
-        new_measurement = IndividualMeasurement(value=float(x_value), binding_id=binding_id)
-        session.add(new_measurement)
+    # Проверяем, какая кнопка была нажата
+    button_clicked_index = [i for i, n in enumerate(all_clicks) if n is not None]
+    if button_clicked_index:
+        clicked_index = button_clicked_index[0]
+        input_value = all_input_values[clicked_index]
+        if input_value is not None:
+            binding_id = int(bid)
+            chart_id = int(chart_id)  # Преобразуем chart_id в int
 
-        session.commit()
-        session.close()
-        return 'True'
+            session = Session()
+            new_measurement = IndividualMeasurement(
+                value=input_value,
+                binding_id=binding_id,
+                chart_id=chart_id
+            )
+            session.add(new_measurement)
+            session.commit()
+            session.close()
+            return 'True'  # данные успешно добавлены
     return 'False'
+
 
 
 @callback(
