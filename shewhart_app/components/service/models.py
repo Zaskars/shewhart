@@ -5,13 +5,14 @@ import datetime
 
 Base = declarative_base()
 
+
 class Measurement(Base):
-    __tablename__ = 'results'
+    __tablename__ = "results"
     id = Column(Integer, primary_key=True, autoincrement=True)
     proportion = Column(Float)
     sample_size = Column(Integer)
     measurement_time = Column(DateTime, default=datetime.datetime.utcnow)
-    binding_id = Column(Integer, ForeignKey('bindings.id'))
+    binding_id = Column(Integer, ForeignKey("bindings.id"))
     binding = relationship("Binding", back_populates="measurements")
 
 
@@ -34,28 +35,38 @@ class Measurement(Base):
 
 
 class IndividualMeasurement(Base):
-    __tablename__ = 'individual_measurements'
+    __tablename__ = "individual_measurements"
     id = Column(Integer, primary_key=True)
     value = Column(Float, nullable=False)
-    binding_id = Column(Integer, ForeignKey('bindings.id'))
+    binding_id = Column(Integer, ForeignKey("bindings.id"))
     binding = relationship("Binding", back_populates="i_measurements")
-    chart_id = Column(Integer, ForeignKey('charts.id'))
+    chart_id = Column(Integer, ForeignKey("charts.id"))
     chart = relationship("Chart", back_populates="measurements")
 
 
 class Chart(Base):
-    __tablename__ = 'charts'
+    __tablename__ = "charts"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    binding_id = Column(Integer, ForeignKey('bindings.id'))
+    binding_id = Column(Integer, ForeignKey("bindings.id"))
     binding = relationship("Binding", back_populates="charts")
-    measurements = relationship("IndividualMeasurement", order_by=IndividualMeasurement.id, back_populates="chart")
+    measurements = relationship(
+        "IndividualMeasurement",
+        order_by=IndividualMeasurement.id,
+        back_populates="chart",
+    )
 
 
 class Binding(Base):
-    __tablename__ = 'bindings'
+    __tablename__ = "bindings"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
-    measurements = relationship("Measurement", order_by=Measurement.id, back_populates="binding")
-    i_measurements = relationship("IndividualMeasurement", order_by=IndividualMeasurement.id, back_populates="binding")
+    measurements = relationship(
+        "Measurement", order_by=Measurement.id, back_populates="binding"
+    )
+    i_measurements = relationship(
+        "IndividualMeasurement",
+        order_by=IndividualMeasurement.id,
+        back_populates="binding",
+    )
     charts = relationship("Chart", order_by=Chart.id, back_populates="binding")

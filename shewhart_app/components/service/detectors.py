@@ -46,7 +46,10 @@ def detect_asterisks(proportions, p_bar):
         else:
             above_mean = 0
         if above_mean >= 7:
-            return True, f"Asterisk pattern detected above the mean starting at point {i - 6}"
+            return (
+                True,
+                f"Asterisk pattern detected above the mean starting at point {i - 6}",
+            )
     return False, ""
 
 
@@ -64,7 +67,9 @@ def detect_trends_x(data_points):
             increasing_trend = 0
             decreasing_trend = 0
 
-        if increasing_trend >= 7:  # значение 7 может быть изменено в зависимости от ваших потребностей
+        if (
+            increasing_trend >= 7
+        ):  # значение 7 может быть изменено в зависимости от ваших потребностей
             return True, f"Increasing trend detected starting at point {i - 6}"
         if decreasing_trend >= 7:
             return True, f"Decreasing trend detected starting at point {i - 6}"
@@ -87,7 +92,9 @@ def detect_shifts_x(data_points, mean_value):
             above_mean = 0
             below_mean = 0
 
-        if above_mean >= 8:  # значение 8 может быть изменено в зависимости от ваших потребностей
+        if (
+            above_mean >= 8
+        ):  # значение 8 может быть изменено в зависимости от ваших потребностей
             return True, "Shift above the mean detected"
         if below_mean >= 8:
             return True, "Shift below the mean detected"
@@ -103,7 +110,12 @@ def detect_asterisks_x(data_points, mean_value):
         else:
             above_mean = 0  # сброс счетчика, если точка ниже среднего
 
-        if above_mean >= 7:  # значение 7 может быть изменено в зависимости от ваших потребностей
-            return True, f"Asterisk pattern detected above the mean starting at point {len(data_points) - above_mean}"
+        if (
+            above_mean >= 7
+        ):  # значение 7 может быть изменено в зависимости от ваших потребностей
+            return (
+                True,
+                f"Asterisk pattern detected above the mean starting at point {len(data_points) - above_mean}",
+            )
 
     return False, ""
