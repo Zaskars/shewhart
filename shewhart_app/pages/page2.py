@@ -34,29 +34,30 @@ STD_DEV = 2
 dash.register_page(__name__, path_template="/bindings/<bid>/view")
 
 
-def generate_chart_containers(chart_ids):
+def generate_chart_containers(charts):
     containers = []
-    for chart_id in chart_ids:
+    for chart in charts:
         containers.append(
             dbc.Row(  # Вся строка для одного набора графиков
                 [
+                    html.H4(chart.name),
                     dbc.Col(  # Колонка для X-chart
                         dcc.Graph(
-                            id={"type": "x-chart", "index": chart_id},
+                            id={"type": "x-chart", "index": chart.id},
                             className="chart-output",
                         ),
                         width=4,  # ширина колонки (из 12)
                     ),
                     dbc.Col(  # Колонка для R-chart
                         dcc.Graph(
-                            id={"type": "r-chart", "index": chart_id},
+                            id={"type": "r-chart", "index": chart.id},
                             className="chart-output",
                         ),
                         width=4,  # ширина колонки (из 12)
                     ),
                     dbc.Col(  # Колонка для S-chart
                         dcc.Graph(
-                            id={"type": "s-chart", "index": chart_id},
+                            id={"type": "s-chart", "index": chart.id},
                             className="chart-output",
                         ),
                         width=4,  # ширина колонки (из 12)
@@ -71,12 +72,14 @@ def layout(bid=None):
     session = Session()
     binding = session.query(Binding).filter_by(id=bid).first()
     charts = binding.charts if binding else []
-    chart_ids = [chart.id for chart in charts]
+
+    # chart_ids = [chart.id for chart in charts]
+    name = binding.name
     session.close()
-    chart_containers = generate_chart_containers(chart_ids)
+    chart_containers = generate_chart_containers(charts)
     return dbc.Container(
         [
-            html.H1(f"View {bid}", className="mb-4"),
+            html.H1(f"View {name}", className="mb-4"),
             html.Div(id="placeholder-x", style={"display": "none"}),
             dcc.Graph(id="p-chart-page2"),
             dbc.Row(
@@ -90,6 +93,7 @@ def layout(bid=None):
                                 placeholder="Enter subgroup size",
                                 value=5,  # Значение по умолчанию
                             ),
+                            html.Br(),
                             dbc.Button(
                                 "Update Chart",
                                 id="update-chart-button",
@@ -104,12 +108,12 @@ def layout(bid=None):
             html.Div(chart_containers, id="charts-container"),
             dcc.Interval(
                 id="interval-component-page2",
-                interval=10 * 100,  # in milliseconds
+                interval=10 * 1000,  # in milliseconds
                 n_intervals=0,
             ),
             dcc.Interval(
                 id="interval-component-x-s-charts",
-                interval=5 * 100,  # обновление каждые 5 секунд
+                interval=10 * 1000,  # обновление каждые 5 секунд
                 n_intervals=0,
             ),
             html.Data(id="bid", value=bid),

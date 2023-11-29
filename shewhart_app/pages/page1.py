@@ -33,7 +33,7 @@ def layout(bid=None):
     session = Session()
     binding_id = int(bid)
     binding = session.query(Binding).filter_by(id=binding_id).one_or_none()
-
+    name = binding.name
     charts_data_input_forms = []
     if binding and binding.charts:
         for chart in binding.charts:
@@ -64,7 +64,9 @@ def layout(bid=None):
     session.close()
     return dbc.Container(
         [
-            html.H1(f"Input for Binding {bid}", className="mb-4"),  # заголовок гребаный
+            html.H1(
+                f"Input for Binding {name}", className="mb-4"
+            ),
             dbc.Row(
                 [
                     dbc.Col(

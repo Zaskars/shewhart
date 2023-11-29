@@ -16,24 +16,6 @@ class Measurement(Base):
     binding = relationship("Binding", back_populates="measurements")
 
 
-# class XData(Base):
-#     __tablename__ = 'x_data'
-#     id = Column(Integer, primary_key=True)
-#     value = Column(Float)
-#     sample_size = Column(Integer)
-#     binding_id = Column(Integer, ForeignKey('bindings.id'))
-#     binding = relationship("Binding", back_populates="x_data")
-#
-#
-# class RData(Base):
-#     __tablename__ = 'r_data'
-#     id = Column(Integer, primary_key=True)
-#     value = Column(Float)
-#     sample_size = Column(Integer)
-#     binding_id = Column(Integer, ForeignKey('bindings.id'))
-#     binding = relationship("Binding", back_populates="r_data")
-
-
 class IndividualMeasurement(Base):
     __tablename__ = "individual_measurements"
     id = Column(Integer, primary_key=True)
